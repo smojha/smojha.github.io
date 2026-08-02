@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sidd Ojha · Coursework</title>
+    <link rel="icon" href="../assets/favicon.png" type="image/png">
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const disableCSS = params.has("ogvibe");
+
+        if (!disableCSS) {
+            const link = document.createElement("link");
+            link.rel = "stylesheet";
+            link.href = "../assets/style.css";
+            document.head.appendChild(link);
+        }
+    </script>
+</head>
+<body>
+    <div class="archive-notice">
+        This page is a snapshot from my time as an undergraduate at Caltech and was archived on August 1, 2026.
+    </div>
+
+    <h1>Sidd Ojha</h1>
+
+    <div class="contact">
+        <p>
+            Undergraduate Student · Applied & Computational Math, Economics<br>
+            California Institute of Technology<br>
+            <a href="index.html">← Back to main</a>
+        </p>
+    </div>
+
+    <div id="favorites" class="section" hidden>
+        <h2>A Handful of Favorite Courses</h2>
+        <p class="equal-contrib-note">Below are some courses that I particularly enjoyed (or at least greatly
+            appreciated, though some, I could only appreciate them after the fact). There are most certainly
+            other courses that should be on the list, but these are the ones that stick out just after wrapping
+            up undergrad. Some of these courses exposed me to entirely new and interesting fields of study, while
+            others are most memorable for the instructors or classmates.
+        </p>
+        <ul id="favorites-list"></ul>
+    </div>
+
+    <div id="affiliations" class="section" hidden>
+        <h2>Some Useless Visualizations</h2>
+        <p class="equal-contrib-note">
+            Curious what option I really took, I made a pie chart of option affiliations of my course schedule. Only unique courses are counted, and each cross-listing counts once for its option.</p>
+        <div class="affiliation-viz">
+            <div class="pie-wrap">
+                <svg id="affiliation-pie" viewBox="-8 -8 136 136" width="300" height="300" aria-label="Pie chart of course department affiliations"></svg>
+                <div id="pie-tooltip" class="pie-tooltip" hidden></div>
+            </div>
+            <ul id="affiliation-legend" class="affiliation-legend"></ul>
+        </div>
+        <div id="number-density" class="section" hidden>
+        <p class="equal-contrib-note">A kernel density estimate of the course numbers I took. Hover to poke around.</p>
+        <div class="density-viz">
+            <div class="density-wrap">
+                <svg id="density-plot" viewBox="0 0 640 240" width="640" height="240" aria-label="Density of course numbers"></svg>
+                <div id="density-tooltip" class="pie-tooltip" hidden></div>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <p id="load-error" class="equal-contrib-note" hidden>Could not load coursework data.</p>
+
+    <script src="data/coursework-data.js"></script>
+    <script>
+        const PIE_COLORS = [
+            "#2f5d50", "#c4a35a", "#3d5a80", "#b56576", "#6b8f71",
+            "#d4a373", "#457b9d", "#8b4d3b", "#5c7a6e", "#e9c46a",
+            "#7a6c5d", "#4a6fa5", "#a67c52", "#5e8b7e", "#c08497",
+            "#6d6875", "#84a98c", "#bc6c25", "#52796f", "#9a8c98"
+        ];
+
+        function polarToCartesian(cx, cy, r, angleDeg) {
+            const rad = ((angleDeg - 90) * Math.PI) / 180;
+            return {
+                x: cx + r * Math.cos(rad),
+                y: cy + r * Math.sin(rad)
+            };
+        }
+
+        function describeSlice(cx, cy, r, startAngle, endAngle) {
+            const start = polarToCartesian(cx, cy, r, endAngle);
+            const end = polarToCartesian(cx, cy, r, startAngle);
+            const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+            return [
+                "M", cx, cy,
+                "L", start.x, start.y,
+                "A", r, r, 0, largeArc, 0, end.x, end.y,
+                "Z"
+            ].join(" ");
+        }
+
+        function formatPct(count, total) {
+            return ((count / total) * 100).toFixed(1) + "%";
+        }
+
+        function renderPie(svg, affiliations) {
+            const total = affiliations.reduce((sum, a) => sum + a.count, 0);
+            if (!total) return;
+
+            const tooltip = document.getElementById("pie-tooltip");
+            const cx = 60;
+            const cy = 60;
+            const r = 54;
+            const pop = 7;
+            let angle = 0;
+
+            function showTip(dept, pct, clientX, clientY) {
+                const wrap = svg.parentElement;
+                const bounds = wrap.getBoundingClientRect();
+                tooltip.hidden = false;
+                tooltip.textContent = `${dept} · ${pct}`;
+                tooltip.style.left = `${clientX - bounds.left}px`;
+                tooltip.style.top = `${clientY - bounds.top - 12}px`;
+            }
+
+            function hideTip() {
+                tooltip.hidden = true;
+            }
+
+            affiliations.forEach((item, i) => {
+                const sweep = (item.count / total) * 360;
+                const mid = angle + sweep / 2;
+                const offset = polarToCartesian(0, 0, pop, mid);
+                const pct = formatPct(item.count, total);
+                const color = PIE_COLORS[i % PIE_COLORS.length];
+
+                let el;
+                if (sweep >= 359.999) {
+                    el = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    el.setAttribute("cx", cx);
+                    el.setAttribute("cy", cy);
+                    el.setAttribute("r", r);
+                } else {
+                    el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                    el.setAttribute("d", describeSlice(cx, cy, r, angle, angle + sweep));
+                }
+
+                el.setAttribute("fill", color);
+                el.classList.add("pie-slice");
+
+                el.addEventListener("mouseenter", () => {
+                    el.setAttribute("transform", `translate(${offset.x} ${offset.y})`);
+                    el.classList.add("is-active");
+                });
+                el.addEventListener("mousemove", (e) => {
+                    showTip(item.dept, pct, e.clientX, e.clientY);
+                });
+                el.addEventListener("mouseleave", () => {
+                    el.removeAttribute("transform");
+                    el.classList.remove("is-active");
+                    hideTip();
+                });
+
+                svg.appendChild(el);
+                angle += sweep;
+            });
+        }
+
+        function gaussianKDE(samples, x, bandwidth) {
+            const n = samples.length;
+            const norm = 1 / (n * bandwidth * Math.sqrt(2 * Math.PI));
+            let sum = 0;
+            for (let i = 0; i < n; i++) {
+                const u = (x - samples[i]) / bandwidth;
+                sum += Math.exp(-0.5 * u * u);
+            }
+            return norm * sum;
+        }
+
+        function silvermanBandwidth(samples) {
+            const n = samples.length;
+            if (n < 2) return 1;
+            const mean = samples.reduce((s, v) => s + v, 0) / n;
+            const variance = samples.reduce((s, v) => s + (v - mean) * (v - mean), 0) / (n - 1);
+            const std = Math.sqrt(variance) || 1;
+            const sorted = samples.slice().sort((a, b) => a - b);
+            const q1 = sorted[Math.floor((n - 1) * 0.25)];
+            const q3 = sorted[Math.floor((n - 1) * 0.75)];
+            const iqr = Math.max(q3 - q1, 0);
+            const sigma = Math.min(std, iqr / 1.34) || std;
+            return Math.max(0.25 * sigma * Math.pow(n, -0.2), 0.35);
+        }
+
+        function renderNumberDensity(samples) {
+            const section = document.getElementById("number-density");
+            const svg = document.getElementById("density-plot");
+            if (!section || !svg || samples.length < 2) return;
+
+            const bandwidth = silvermanBandwidth(samples);
+            const minX = Math.min(...samples);
+            const maxX = Math.max(...samples);
+            const pad = bandwidth * 2.5;
+            const x0 = Math.max(0, minX - pad);
+            const x1 = maxX + pad;
+
+            const width = 640;
+            const height = 240;
+            const margin = { top: 16, right: 20, bottom: 48, left: 20 };
+            const plotW = width - margin.left - margin.right;
+            const plotH = height - margin.top - margin.bottom;
+
+            const gridN = 200;
+            const xs = [];
+            const ys = [];
+            let yMax = 0;
+            for (let i = 0; i <= gridN; i++) {
+                const x = x0 + ((x1 - x0) * i) / gridN;
+                const y = gaussianKDE(samples, x, bandwidth);
+                xs.push(x);
+                ys.push(y);
+                if (y > yMax) yMax = y;
+            }
+            if (yMax <= 0) return;
+
+            const xScale = (x) => margin.left + ((x - x0) / (x1 - x0)) * plotW;
+            const yScale = (y) => margin.top + plotH - (y / yMax) * plotH;
+
+            let area = `M ${xScale(xs[0])} ${yScale(0)}`;
+            for (let i = 0; i < xs.length; i++) {
+                area += ` L ${xScale(xs[i])} ${yScale(ys[i])}`;
+            }
+            area += ` L ${xScale(xs[xs.length - 1])} ${yScale(0)} Z`;
+
+            let line = `M ${xScale(xs[0])} ${yScale(ys[0])}`;
+            for (let i = 1; i < xs.length; i++) {
+                line += ` L ${xScale(xs[i])} ${yScale(ys[i])}`;
+            }
+
+            const ns = "http://www.w3.org/2000/svg";
+
+            const areaPath = document.createElementNS(ns, "path");
+            areaPath.setAttribute("d", area);
+            areaPath.setAttribute("class", "density-area");
+            svg.appendChild(areaPath);
+
+            const linePath = document.createElementNS(ns, "path");
+            linePath.setAttribute("d", line);
+            linePath.setAttribute("class", "density-line");
+            linePath.setAttribute("fill", "none");
+            svg.appendChild(linePath);
+
+            const axis = document.createElementNS(ns, "line");
+            axis.setAttribute("x1", margin.left);
+            axis.setAttribute("x2", margin.left + plotW);
+            axis.setAttribute("y1", margin.top + plotH);
+            axis.setAttribute("y2", margin.top + plotH);
+            axis.setAttribute("class", "density-axis");
+            svg.appendChild(axis);
+
+            const labels = new Set([1, 50, 100, 150, 200, 250].filter((t) => t >= x0 && t <= x1));
+            labels.add(Math.round(minX));
+            labels.add(Math.round(maxX));
+            [...labels].sort((a, b) => a - b).forEach((t) => {
+                if (t < x0 || t > x1) return;
+                const x = xScale(t);
+                const tick = document.createElementNS(ns, "line");
+                tick.setAttribute("x1", x);
+                tick.setAttribute("x2", x);
+                tick.setAttribute("y1", margin.top + plotH);
+                tick.setAttribute("y2", margin.top + plotH + 5);
+                tick.setAttribute("class", "density-axis");
+                svg.appendChild(tick);
+
+                const text = document.createElementNS(ns, "text");
+                text.setAttribute("x", x);
+                text.setAttribute("y", margin.top + plotH + 18);
+                text.setAttribute("text-anchor", "middle");
+                text.setAttribute("class", "density-label");
+                text.textContent = String(t);
+                svg.appendChild(text);
+            });
+
+            const axisTitle = document.createElementNS(ns, "text");
+            axisTitle.setAttribute("x", margin.left + plotW / 2);
+            axisTitle.setAttribute("y", height - 6);
+            axisTitle.setAttribute("text-anchor", "middle");
+            axisTitle.setAttribute("class", "density-axis-title");
+            axisTitle.textContent = "Course #";
+            svg.appendChild(axisTitle);
+
+            const guide = document.createElementNS(ns, "line");
+            guide.setAttribute("class", "density-guide");
+            guide.setAttribute("y1", margin.top);
+            guide.setAttribute("y2", margin.top + plotH);
+            guide.setAttribute("visibility", "hidden");
+            svg.appendChild(guide);
+
+            const dot = document.createElementNS(ns, "circle");
+            dot.setAttribute("class", "density-dot");
+            dot.setAttribute("r", 4);
+            dot.setAttribute("visibility", "hidden");
+            svg.appendChild(dot);
+
+            const hit = document.createElementNS(ns, "rect");
+            hit.setAttribute("x", margin.left);
+            hit.setAttribute("y", margin.top);
+            hit.setAttribute("width", plotW);
+            hit.setAttribute("height", plotH);
+            hit.setAttribute("class", "density-hit");
+            svg.appendChild(hit);
+
+            const tooltip = document.getElementById("density-tooltip");
+            const wrap = svg.parentElement;
+
+            function densityAtPixelX(clientX) {
+                const bounds = svg.getBoundingClientRect();
+                const svgX = ((clientX - bounds.left) / bounds.width) * width;
+                const t = (svgX - margin.left) / plotW;
+                if (t < 0 || t > 1) return null;
+                const xVal = x0 + t * (x1 - x0);
+                const idx = Math.round(((xVal - x0) / (x1 - x0)) * gridN);
+                const i = Math.max(0, Math.min(gridN, idx));
+                return { xVal, yVal: ys[i], px: xScale(xs[i]), py: yScale(ys[i]) };
+            }
+
+            hit.addEventListener("mousemove", (e) => {
+                const pt = densityAtPixelX(e.clientX);
+                if (!pt) return;
+
+                guide.setAttribute("x1", pt.px);
+                guide.setAttribute("x2", pt.px);
+                guide.setAttribute("visibility", "visible");
+                dot.setAttribute("cx", pt.px);
+                dot.setAttribute("cy", pt.py);
+                dot.setAttribute("visibility", "visible");
+
+                const num = Math.round(pt.xVal);
+                const label = `XX${num}`;
+
+                const wrapBounds = wrap.getBoundingClientRect();
+                tooltip.hidden = false;
+                tooltip.textContent = label;
+                tooltip.style.left = `${e.clientX - wrapBounds.left}px`;
+                tooltip.style.top = `${e.clientY - wrapBounds.top - 12}px`;
+            });
+
+            hit.addEventListener("mouseleave", () => {
+                guide.setAttribute("visibility", "hidden");
+                dot.setAttribute("visibility", "hidden");
+                tooltip.hidden = true;
+            });
+
+            section.hidden = false;
+        }
+
+        function renderFavorites(favorites) {
+            const section = document.getElementById("favorites");
+            const list = document.getElementById("favorites-list");
+            if (!favorites.length) return;
+
+            favorites.forEach((course) => {
+                const li = document.createElement("li");
+                li.textContent = `${course.code} — ${course.title}`;
+                list.appendChild(li);
+            });
+            section.hidden = false;
+        }
+
+        function renderAffiliations(affiliations) {
+            const section = document.getElementById("affiliations");
+            const svg = document.getElementById("affiliation-pie");
+            const legend = document.getElementById("affiliation-legend");
+            if (!affiliations.length) return;
+
+            renderPie(svg, affiliations);
+
+            if (legend) {
+                affiliations.forEach((item, i) => {
+                    const li = document.createElement("li");
+                    const swatch = document.createElement("span");
+                    swatch.className = "legend-swatch";
+                    swatch.style.background = PIE_COLORS[i % PIE_COLORS.length];
+                    li.appendChild(swatch);
+                    li.appendChild(document.createTextNode(item.dept));
+                    legend.appendChild(li);
+                });
+            }
+
+            section.hidden = false;
+        }
+
+        const data = window.COURSEWORK;
+        if (!data) {
+            document.getElementById("load-error").hidden = false;
+        } else {
+            renderFavorites(data.favorites || []);
+            renderAffiliations(data.affiliations || []);
+            renderNumberDensity(data.courseNumbers || []);
+        }
+    </script>
+</body>
+</html>
